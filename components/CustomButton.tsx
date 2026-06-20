@@ -1,18 +1,12 @@
-import React, { useRef } from "react";
-import {
-  Pressable,
-  Text,
-  StyleSheet,
-  View,
-  GestureResponderEvent,
-} from "react-native";
+import React from "react";
+import { Pressable, Text, StyleSheet, View } from "react-native";
 
 // ───────────────────────────────────────────────
-// CustomButton — Child Component
-// Receives PROPS DATA (label, icon, variant) and a
-// PROPS FUNCTION (onAction) from the parent. It does not
-// own any state itself — every tap/hold just calls back
-// up to whatever function the parent handed it.
+// CustomButton — Child Component (refactored, "dumb")
+// No timers, no setInterval, no logic of its own anymore.
+// It only forwards raw press events up to the parent via
+// PROPS FUNCTIONS (onPressIn / onPressOut). The PARENT
+// decides what holding/releasing actually means.
 // ───────────────────────────────────────────────
 
 export type ButtonVariant = "radiant" | "dire" | "recall";
@@ -22,8 +16,8 @@ interface CustomButtonProps {
   caption: string;
   glyph: string;
   variant: ButtonVariant;
-  onAction: () => void;
-  holdToRepeat?: boolean;
+  onPressIn: () => void;
+  onPressOut: () => void;
 }
 
 const VARIANT_STYLES: Record<
@@ -50,63 +44,24 @@ const VARIANT_STYLES: Record<
   },
 };
 
-const INITIAL_DELAY = 380; // ms before holding starts repeating
-const REPEAT_INTERVAL = 90; // ms between repeats while held
-
 export default function CustomButton({
   label,
   caption,
   glyph,
   variant,
-  onAction,
-  holdToRepeat = false,
+  onPressIn,
+  onPressOut,
 }: CustomButtonProps) {
   const colors = VARIANT_STYLES[variant];
-  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const [pressed, setPressed] = React.useState(false);
-
-  const clearTimers = () => {
-    if (timeoutRef.current) {
-      clearTimeout(timeoutRef.current);
-      timeoutRef.current = null;
-    }
-    if (intervalRef.current) {
-      clearInterval(intervalRef.current);
-      intervalRef.current = null;
-    }
-  };
-
-  const handlePressIn = (_e: GestureResponderEvent) => {
-    setPressed(true);
-    // Always fire once immediately, like a normal tap
-    onAction();
-
-    if (holdToRepeat) {
-      timeoutRef.current = setTimeout(() => {
-        intervalRef.current = setInterval(() => {
-          onAction();
-        }, REPEAT_INTERVAL);
-      }, INITIAL_DELAY);
-    }
-  };
-
-  const handlePressOut = () => {
-    setPressed(false);
-    clearTimers();
-  };
-
-  React.useEffect(() => clearTimers, []);
 
   return (
     <Pressable
-      onPressIn={handlePressIn}
-      onPressOut={handlePressOut}
-      style={({ pressed: rnPressed }) => [
+      onPressIn={onPressIn}
+      onPressOut={onPressOut}
+      style={({ pressed }) => [
         styles.button,
         {
-          backgroundColor:
-            pressed || rnPressed ? colors.pressed : colors.base,
+          backgroundColor: pressed ? colors.pressed : colors.base,
           borderColor: colors.border,
           shadowColor: colors.glow,
         },

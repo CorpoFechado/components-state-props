@@ -1,41 +1,82 @@
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import {
   View,
   Text,
   StyleSheet,
   SafeAreaView,
   StatusBar,
-  ImageBackground,
 } from "react-native";
 import CustomButton from "../../components/CustomButton";
 
 // ───────────────────────────────────────────────
-// index.tsx — Parent Component
-// Owns the ONE source of truth: `count` (React state).
-// CustomButton is a dumb child — it never touches state
-// directly. The parent hands it:
-//   • PROPS DATA    → not needed by the buttons here,
-//                      only CounterDisplay-style readout below
-//   • PROPS FUNCTION → handleAdd / handleMinus / handleReset
-// Whenever a child calls its prop function, the parent's
-// setCount runs, state updates, and React re-renders the
-// whole tree downward — that's the one-way data flow.
+// index.tsx — Parent Component (refactored)
+// Owns BOTH the count state AND the single "what's
+// currently being held" timer. Because everything lives
+// in one place, handleReset can always force-stop any
+// hold in progress — no orphaned intervals possible.
 // ───────────────────────────────────────────────
 
 const STARTING_GOLD = 100;
+const INITIAL_DELAY = 380; // ms before holding starts repeating
+const REPEAT_INTERVAL = 90; // ms between repeats while held
+
+type ActiveAction = "add" | "minus" | null;
 
 export default function Index() {
   const [count, setCount] = useState(STARTING_GOLD);
+  const [activeAction, setActiveAction] = useState<ActiveAction>(null);
 
-  const handleAdd = () => setCount((prev) => prev + 1);
-  const handleMinus = () => setCount((prev) => prev - 1);
-  const handleReset = () => setCount(STARTING_GOLD);
+  // Only ONE set of timer refs for the whole screen, instead of
+  // one per button. Whoever is "active" owns them.
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const step = (delta: number) => setCount((prev) => prev + delta);
+
+  const stopHolding = () => {
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+      timeoutRef.current = null;
+    }
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
+    setActiveAction(null);
+  };
+
+  const startHolding = (action: ActiveAction, delta: number) => {
+    // Safety: if something else was already running, kill it first.
+    // This means only ONE button can ever be auto-repeating at a time,
+    // no matter how many fingers are on the screen.
+    stopHolding();
+
+    setActiveAction(action);
+    step(delta); // fire once immediately, like a normal tap
+
+    timeoutRef.current = setTimeout(() => {
+      intervalRef.current = setInterval(() => {
+        step(delta);
+      }, REPEAT_INTERVAL);
+    }, INITIAL_DELAY);
+  };
+
+  const handleAddIn = () => startHolding("add", 1);
+  const handleMinusIn = () => startHolding("minus", -1);
+  const handleReleaseOut = () => stopHolding();
+
+  const handleReset = () => {
+    stopHolding(); // <-- the actual bug fix: kill ANY running hold first
+    setCount(STARTING_GOLD);
+  };
+
+  React.useEffect(() => stopHolding, []);
 
   return (
     <SafeAreaView style={styles.safe}>
       <StatusBar barStyle="light-content" />
       <View style={styles.bg}>
-        <Text style={styles.eyebrow}>SECRET SHOP</Text>
+        <Text style={styles.eyebrow}>SHOPKEEPER'S LEDGER</Text>
         <Text style={styles.title}>Ako ang Parent Screen</Text>
 
         {/* ── Aegis-style gold readout (state, owned by parent) ── */}
@@ -47,7 +88,7 @@ export default function Index() {
           </View>
         </View>
 
-        {/* ── Child component: CounterDisplay-equivalent buttons ── */}
+        {/* ── Child components: dumb CustomButtons ── */}
         <View style={styles.panel}>
           <Text style={styles.panelHeader}>ITO ANG CHILD COMPONENT</Text>
           <Text style={styles.panelSub}>(CustomButton.tsx)</Text>
@@ -57,29 +98,30 @@ export default function Index() {
             caption="Pick up gold"
             glyph="⚔"
             variant="radiant"
-            onAction={handleAdd}
-            holdToRepeat
+            onPressIn={handleAddIn}
+            onPressOut={handleReleaseOut}
           />
           <CustomButton
             label="Minus Count"
             caption="Spend gold"
             glyph="🗡"
             variant="dire"
-            onAction={handleMinus}
-            holdToRepeat
+            onPressIn={handleMinusIn}
+            onPressOut={handleReleaseOut}
           />
           <CustomButton
             label="Reset Count"
             caption="Recall to base"
             glyph="⌂"
             variant="recall"
-            onAction={handleReset}
+            onPressIn={handleReset}
+            onPressOut={() => {}}
           />
         </View>
 
         <Text style={styles.footnote}>
-          Hold a button to channel — gold ticks continuously, just like
-          holding right-click on a creep.
+          Hold a button to channel — gold ticks continuously. Reset always
+          interrupts any channel in progress, just like a forced recall.
         </Text>
       </View>
     </SafeAreaView>
